@@ -2,7 +2,8 @@ import os
 from dotenv import load_dotenv
 
 # import namespaces
-
+from openai import OpenAI
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 
 def main(): 
@@ -14,11 +15,22 @@ def main():
         load_dotenv()
         azure_openai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
         model_deployment = os.getenv("MODEL_DEPLOYMENT")
+        if model_deployment is None:
+            raise ValueError("MODEL_DEPLOYMENT environment variable is not set.")
 
         # Initialize the OpenAI client
+        token_provider = get_bearer_token_provider(
+            DefaultAzureCredential(), "https://ai.azure.com/.default"
+        )
         
+        openai_client = OpenAI(
+            base_url=azure_openai_endpoint,
+            api_key=token_provider
+        )
 
-
+        # Track responses
+        last_response_id = None
+        
         # Loop until the user wants to quit
         while True:
             input_text = input('\nEnter a prompt (or type "quit" to exit): ')
@@ -29,7 +41,20 @@ def main():
                 continue
 
             # Get a response
-            
+            stream = openai_client.responses.create(
+                model=model_deployment,
+                instructions="You are a helpful AI assistant that answers questions and provides information.",
+                input=input_text,
+                previous_response_id=last_response_id,
+                stream=True
+            )
+            for event in stream:
+                if event.type == "response.output_text.delta":
+                    print(event.delta, end="")
+                elif event.type == "response.completed":
+                    last_response_id = event.response.id
+                    
+            print()
 
     except Exception as ex:
         print(ex)
